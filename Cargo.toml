@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/os-kit",
+    "crates/overlay",
+    "crates/app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+mouseless-core = { path = "crates/core" }
+mouseless-os-kit = { path = "crates/os-kit" }
+mouseless-overlay = { path = "crates/overlay" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+# A panic unwinding out of the low-level hook callback would cross an FFI
+# boundary. Aborting is the honest failure mode: Windows drops the hook and the
+# user gets their keyboard back, rather than a half-live process eating keys.
+panic = "abort"

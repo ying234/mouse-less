@@ -1,0 +1,16 @@
+[package]
+name = "mouseless-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "my-mouseless"
+path = "src/main.rs"
+
+[dependencies]
+mouseless-core.workspace = true
+mouseless-os-kit.workspace = true
+mouseless-overlay.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.4"

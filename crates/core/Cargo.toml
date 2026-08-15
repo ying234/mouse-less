@@ -1,0 +1,9 @@
+[package]
+name = "mouseless-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Deliberately dependency-free and platform-free: this crate is the state
+# machine, and it must stay unit-testable without a display or an OS hook.
+[dependencies]
