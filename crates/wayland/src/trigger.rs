@@ -14,10 +14,52 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 
 use crate::Event;
+
+/// Turns a stream of taps into the double taps that actually mean something.
+///
+/// A lone modifier makes a good trigger because nothing else claims it, but
+/// only if a single press does not fire: people release Ctrl without meaning
+/// anything by it constantly. Requiring two within a short window is what
+/// separates intent from habit — the same reasoning, and the same
+/// `double_tap_ms` setting, as the Windows tap trigger.
+#[derive(Debug)]
+pub struct DoubleTap {
+    window: Duration,
+    /// The first tap of a pair, still waiting for its partner.
+    pending: Option<Instant>,
+}
+
+impl DoubleTap {
+    pub fn new(window: Duration) -> Self {
+        Self {
+            window,
+            pending: None,
+        }
+    }
+
+    /// Record a tap, and report whether it completed a double tap.
+    ///
+    /// Completing one clears the state rather than leaving the tap available
+    /// to pair with the next: three taps in a row are one trigger and a fresh
+    /// start, not two triggers.
+    pub fn tap(&mut self, now: Instant) -> bool {
+        match self.pending {
+            Some(first) if now.duration_since(first) <= self.window => {
+                self.pending = None;
+                true
+            }
+            _ => {
+                self.pending = Some(now);
+                false
+            }
+        }
+    }
+}
 
 /// Where the daemon listens.
 ///
@@ -49,9 +91,12 @@ impl Drop for Listener {
 
 /// Start accepting commands, forwarding them to `tx` on a background thread.
 ///
+/// `tap_window` is how close together two `tap` commands must be to count as a
+/// double tap.
+///
 /// Fails if another daemon already holds the socket, which is worth refusing:
 /// two instances would both grab the keyboard and fight over the cursor.
-pub fn listen(tx: Sender<Event>) -> std::io::Result<Listener> {
+pub fn listen(tx: Sender<Event>, tap_window: Duration) -> std::io::Result<Listener> {
     let path = socket_path();
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
@@ -76,10 +121,20 @@ pub fn listen(tx: Sender<Event>) -> std::io::Result<Listener> {
     std::thread::Builder::new()
         .name("mouseless-trigger".into())
         .spawn(move || {
+            let mut double_tap = DoubleTap::new(tap_window);
             for stream in listener.incoming().flatten() {
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
                     let event = match line.trim() {
                         "toggle" | "" => Event::Trigger,
+                        // Half of a double tap is not an event at all, so
+                        // there is nothing to forward until the second one.
+                        "tap" => {
+                            if double_tap.tap(Instant::now()) {
+                                Event::Trigger
+                            } else {
+                                continue;
+                            }
+                        }
                         "quit" => Event::Quit,
                         other => {
                             eprintln!("trigger: ignoring unknown command {other:?}");
@@ -96,4 +151,71 @@ pub fn listen(tx: Sender<Event>) -> std::io::Result<Listener> {
         })?;
 
     Ok(Listener { path })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WINDOW: Duration = Duration::from_millis(350);
+
+    fn at(start: Instant, ms: u64) -> Instant {
+        start + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_single_tap_does_nothing() {
+        // The whole point: releasing Ctrl without meaning anything by it is
+        // something people do all day.
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        assert!(!d.tap(start));
+    }
+
+    #[test]
+    fn two_taps_inside_the_window_trigger() {
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        assert!(!d.tap(start));
+        assert!(d.tap(at(start, 200)));
+    }
+
+    #[test]
+    fn the_boundary_counts_as_inside() {
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        d.tap(start);
+        assert!(d.tap(at(start, 350)));
+    }
+
+    #[test]
+    fn two_taps_outside_the_window_do_not() {
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        assert!(!d.tap(start));
+        assert!(!d.tap(at(start, 351)));
+    }
+
+    #[test]
+    fn a_late_tap_becomes_the_start_of_the_next_pair() {
+        // Otherwise a slow tap would be wasted and the user would have to tap
+        // three times to get anywhere.
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        d.tap(start);
+        assert!(!d.tap(at(start, 900)));
+        assert!(d.tap(at(start, 1000)));
+    }
+
+    #[test]
+    fn three_quick_taps_trigger_once() {
+        // Not twice: the second tap is consumed by the first trigger, so the
+        // third has to wait for a partner of its own.
+        let start = Instant::now();
+        let mut d = DoubleTap::new(WINDOW);
+        assert!(!d.tap(start));
+        assert!(d.tap(at(start, 100)));
+        assert!(!d.tap(at(start, 200)));
+        assert!(d.tap(at(start, 300)));
+    }
 }

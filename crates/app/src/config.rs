@@ -42,8 +42,14 @@ pub struct FileConfig {
     /// Pixels moved when the same key is pressed with Shift.
     pub nudge_step_fast: i32,
     /// Longest press still counted as a tap rather than a hold, in ms.
+    ///
+    /// Windows only: telling a tap from a hold needs to see the press, and on
+    /// Wayland only the compositor does.
     pub tap_timeout_ms: u32,
     /// Longest gap between the two taps of a double tap, in ms.
+    ///
+    /// Applies on both platforms — on Wayland to `my-mouseless tap`, which a
+    /// compositor binding calls on a modifier's release.
     pub double_tap_ms: u32,
     /// Largest label text in pixels. In practice this sets the coarse grid's
     /// size; refined cells compute smaller than it and are unaffected.
@@ -170,6 +176,13 @@ const FILE_HEADER: &str = "\
 #                   bind = CTRL ALT, SPACE, exec, my-mouseless toggle
 #   Sway            ~/.config/sway/config
 #                   bindsym Ctrl+Alt+space exec my-mouseless toggle
+#
+# To trigger on a double tap of a lone Ctrl instead, bind `my-mouseless tap` to
+# its *release* - `double_tap_ms` below then applies here too. On Omarchy:
+#
+#   local t = { release = true, non_consuming = true }
+#   o.bind(\"CTRL + Control_L\", \"Mouseless grid\", \"my-mouseless tap\", t)
+#   o.bind(\"CTRL + Control_R\", \"Mouseless grid\", \"my-mouseless tap\", t)
 #
 # See the README's \"Linux setup\" section for the autostart entry that goes
 # with it.

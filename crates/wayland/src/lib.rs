@@ -90,7 +90,14 @@ pub struct Platform {
 }
 
 /// Connect to the compositor and start listening for triggers.
-pub fn start(options: RenderOptions) -> Result<(Platform, Receiver<Event>), Error> {
+///
+/// `tap_window` is how close together two `my-mouseless tap` invocations must
+/// be to count as a double tap, for a compositor binding that fires on a lone
+/// modifier.
+pub fn start(
+    options: RenderOptions,
+    tap_window: std::time::Duration,
+) -> Result<(Platform, Receiver<Event>), Error> {
     let (events_tx, events_rx) = crossbeam_channel::unbounded();
     let (cmd_tx, cmd_rx) = smithay_client_toolkit::reexports::calloop::channel::channel();
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
@@ -107,7 +114,7 @@ pub fn start(options: RenderOptions) -> Result<(Platform, Receiver<Event>), Erro
         Err(_) => return Err(Error::Connect("the Wayland thread stopped".into())),
     };
 
-    let listener = trigger::listen(events_tx.clone())?;
+    let listener = trigger::listen(events_tx.clone(), tap_window)?;
     install_signal_handler(events_tx);
 
     Ok((

@@ -30,10 +30,11 @@ impl Iterator for Events {
 }
 
 pub fn start(
-    _cfg: &FileConfig,
+    cfg: &FileConfig,
     options: RenderOptions,
 ) -> Result<(Platform, Events), Box<dyn std::error::Error>> {
-    let (inner, events) = mouseless_wayland::start(options)?;
+    let tap_window = std::time::Duration::from_millis(cfg.double_tap_ms.into());
+    let (inner, events) = mouseless_wayland::start(options, tap_window)?;
     Ok((
         Platform { inner },
         Events {
