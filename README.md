@@ -23,16 +23,97 @@ First run writes the config file with the defaults below:
 `%APPDATA%\my-mouseless\config.toml` on Windows,
 `$XDG_CONFIG_HOME/my-mouseless/config.toml` (usually `~/.config/…`) on Linux.
 
-### Linux: bind the trigger
+Windows is then finished: the program installs its own hotkey. Linux needs three
+more minutes, below.
 
-No Wayland client can watch for a hotkey it does not own — the compositor holds
-that key, deliberately. So the program runs as a daemon and the compositor pokes
-it. In `~/.config/hypr/hyprland.conf`:
+## Linux setup
+
+**The `hotkey` setting in `config.toml` does nothing here.** No Wayland client
+can watch for a key it does not own — the compositor holds that key,
+deliberately, and no setting in this program can take it. So the program runs as
+a daemon and the compositor pokes it. Three pieces: put the binary on `PATH`,
+bind a key to it, start it at login.
+
+### 1. Put the binary on `PATH`
+
+A symlink rather than a copy, so `cargo build --release` updates it with no
+reinstall step:
+
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$PWD/target/release/my-mouseless" ~/.local/bin/my-mouseless
+```
+
+Check your compositor can see it — this is the PATH that graphical sessions get,
+which is not always your shell's:
+
+```bash
+systemctl --user show-environment | grep -E '^PATH=' | tr ':' '\n' | grep local/bin
+```
+
+If nothing prints, use the full path in the two config snippets below instead of
+the bare `my-mouseless`.
+
+### 2. Bind a key
+
+**Omarchy** configures Hyprland in Lua. In `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("CTRL + ALT + SPACE", "Mouseless grid", "my-mouseless toggle")
+```
+
+**Stock Hyprland**, in `~/.config/hypr/hyprland.conf`:
+
+```
+bind = CTRL ALT, SPACE, exec, my-mouseless toggle
+```
+
+**Sway**, in `~/.config/sway/config`:
+
+```
+bindsym Ctrl+Alt+space exec my-mouseless toggle
+```
+
+Pick any key you like — `Ctrl+Alt+Space` only matches the Windows default so the
+two feel the same. Check it is free first, and unbind it if not: on Omarchy,
+`omarchy menu keybindings --print` lists everything, and rebinding an occupied
+key needs an `hl.unbind("...")` line above your `o.bind`. Omarchy leaves
+`Ctrl+Alt+Space` free.
+
+### 3. Start it at login
+
+**Omarchy**, in `~/.config/hypr/autostart.lua`:
+
+```lua
+o.launch_on_start("my-mouseless")
+```
+
+**Stock Hyprland**, in `~/.config/hypr/hyprland.conf`:
 
 ```
 exec-once = my-mouseless
-bind = SUPER, slash, exec, my-mouseless toggle
 ```
+
+That only fires at login, so start it once by hand now — or just log out and
+back in:
+
+```bash
+my-mouseless &
+```
+
+### 4. Check it
+
+```bash
+hyprctl reload && hyprctl configerrors   # Omarchy / Hyprland: must print nothing
+pgrep -x my-mouseless                    # the daemon is up
+my-mouseless toggle                      # the grid should appear
+```
+
+If `toggle` works but your key does not, the binding is the problem, not this
+program. If neither works, read the daemon's output — it prints what it bound
+and what it found at startup.
+
+### What the commands do
 
 `my-mouseless toggle` opens or closes the grid on the running daemon;
 `my-mouseless quit` shuts it down. Both talk to it over

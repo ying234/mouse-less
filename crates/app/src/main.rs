@@ -118,11 +118,17 @@ my-mouseless — keyboard-driven cursor control
   my-mouseless toggle    open or close the grid on the running daemon
   my-mouseless quit      ask the running daemon to exit
 
-Wayland gives no client a global hotkey, so bind `my-mouseless toggle` in your
-compositor. For Hyprland, in ~/.config/hypr/hyprland.conf:
+Wayland gives no client a global hotkey, so the compositor has to hold one and
+run `my-mouseless toggle`. Where that line goes depends on the compositor:
 
-  exec-once = my-mouseless
-  bind = SUPER, slash, exec, my-mouseless toggle";
+  Omarchy    ~/.config/hypr/bindings.lua
+             o.bind(\"CTRL + ALT + SPACE\", \"Mouseless grid\", \"my-mouseless toggle\")
+  Hyprland   ~/.config/hypr/hyprland.conf
+             bind = CTRL ALT, SPACE, exec, my-mouseless toggle
+  Sway       ~/.config/sway/config
+             bindsym Ctrl+Alt+space exec my-mouseless toggle
+
+The README's \"Linux setup\" section has the autostart entry that goes with it.";
 
 #[cfg(windows)]
 const USAGE: &str = "\

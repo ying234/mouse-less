@@ -160,12 +160,19 @@ const FILE_HEADER: &str = "# my-mouseless configuration.\n\n";
 const FILE_HEADER: &str = "\
 # my-mouseless configuration.
 #
-# The `hotkey` setting below is Windows-only. On Wayland the compositor owns
-# global hotkeys, so bind one to `my-mouseless toggle` instead. For Hyprland,
-# in ~/.config/hypr/hyprland.conf:
+# NOTE: the `hotkey` setting below does nothing on Wayland. No client can claim
+# a global hotkey there, so the compositor has to hold it and run
+# `my-mouseless toggle`. Where that line goes depends on your compositor:
 #
-#   exec-once = my-mouseless
-#   bind = SUPER, slash, exec, my-mouseless toggle
+#   Omarchy         ~/.config/hypr/bindings.lua
+#                   o.bind(\"CTRL + ALT + SPACE\", \"Mouseless grid\", \"my-mouseless toggle\")
+#   Hyprland        ~/.config/hypr/hyprland.conf
+#                   bind = CTRL ALT, SPACE, exec, my-mouseless toggle
+#   Sway            ~/.config/sway/config
+#                   bindsym Ctrl+Alt+space exec my-mouseless toggle
+#
+# See the README's \"Linux setup\" section for the autostart entry that goes
+# with it.
 
 ";
 
