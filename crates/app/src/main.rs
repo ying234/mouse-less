@@ -116,10 +116,11 @@ my-mouseless — keyboard-driven cursor control
 
   my-mouseless           run the daemon
   my-mouseless toggle    open or close the grid on the running daemon
+  my-mouseless tap       count a tap; two within double_tap_ms toggle the grid
   my-mouseless quit      ask the running daemon to exit
 
 Wayland gives no client a global hotkey, so the compositor has to hold one and
-run `my-mouseless toggle`. Where that line goes depends on the compositor:
+run one of the commands above. Where that line goes depends on the compositor:
 
   Omarchy    ~/.config/hypr/bindings.lua
              o.bind(\"CTRL + ALT + SPACE\", \"Mouseless grid\", \"my-mouseless toggle\")
@@ -128,7 +129,9 @@ run `my-mouseless toggle`. Where that line goes depends on the compositor:
   Sway       ~/.config/sway/config
              bindsym Ctrl+Alt+space exec my-mouseless toggle
 
-The README's \"Linux setup\" section has the autostart entry that goes with it.";
+To trigger on a double tap of a lone modifier instead, bind `my-mouseless tap`
+to that modifier's *release* — see the README's \"Linux setup\" section, which
+also has the autostart entry.";
 
 #[cfg(windows)]
 const USAGE: &str = "\
@@ -151,7 +154,7 @@ fn handle_cli() -> Result<bool, Box<dyn std::error::Error>> {
         return Ok(false);
     };
     match arg.as_str() {
-        "toggle" | "quit" => match mouseless_wayland::trigger::send(&arg) {
+        "toggle" | "tap" | "quit" => match mouseless_wayland::trigger::send(&arg) {
             Ok(()) => Ok(true),
             Err(e) => Err(format!(
                 "could not reach a running my-mouseless ({e}); start one first"

@@ -80,6 +80,47 @@ two feel the same. Check it is free first, and unbind it if not: on Omarchy,
 key needs an `hl.unbind("...")` line above your `o.bind`. Omarchy leaves
 `Ctrl+Alt+Space` free.
 
+#### Double-tapping a lone modifier instead
+
+The Windows build can trigger on a double tap of Ctrl, and Wayland can get
+close. The compositor cannot do the counting, but it does not have to: bind the
+modifier's **release** to `my-mouseless tap`, and the daemon triggers only when
+two arrive within `double_tap_ms`. A single tap does nothing, which is the whole
+point — people release Ctrl all day without meaning anything by it.
+
+**Omarchy**, in `~/.config/hypr/bindings.lua`:
+
+```lua
+local mouseless_tap = { release = true, non_consuming = true }
+o.bind("CTRL + Control_L", "Mouseless grid (double-tap Ctrl)", "my-mouseless tap", mouseless_tap)
+o.bind("CTRL + Control_R", "Mouseless grid (double-tap Ctrl)", "my-mouseless tap", mouseless_tap)
+```
+
+**Stock Hyprland**, in `~/.config/hypr/hyprland.conf`:
+
+```
+bindrn = CTRL, Control_L, exec, my-mouseless tap
+bindrn = CTRL, Control_R, exec, my-mouseless tap
+```
+
+`non_consuming` / the `n` flag matters more than it looks: swallowing a Ctrl
+*release* would leave every application believing Ctrl is still held, which is
+far worse than a trigger that does not fire.
+
+**The caveat.** Whether a release bind also fires after you have *used* the
+modifier — `Ctrl+C` and then `Ctrl+V` in quick succession — is up to the
+compositor, and it is the one thing this program cannot control. If the grid
+starts appearing while you work, you have a compositor that fires either way.
+Two fixes, in order of preference:
+
+- bind only `Control_R`. Almost nothing uses right Ctrl in a shortcut, so
+  nothing can be mistaken for a tap of it. This is what the Windows build
+  recommends too, for the same reason.
+- lower `double_tap_ms` — a shorter window is harder to hit by accident, and
+  also harder to hit on purpose.
+
+`Esc` always closes the grid, so a misfire costs one keystroke, never a session.
+
 ### 3. Start it at login
 
 **Omarchy**, in `~/.config/hypr/autostart.lua`:
@@ -115,8 +156,9 @@ and what it found at startup.
 
 ### What the commands do
 
-`my-mouseless toggle` opens or closes the grid on the running daemon;
-`my-mouseless quit` shuts it down. Both talk to it over
+`my-mouseless toggle` opens or closes the grid on the running daemon,
+`my-mouseless tap` counts one tap toward a double tap, and `my-mouseless quit`
+shuts the daemon down. All three talk to it over
 `$XDG_RUNTIME_DIR/my-mouseless.sock`, so they cost a process spawn and nothing
 else. Starting a second daemon is refused rather than allowed to fight the first
 one over the cursor.
@@ -198,8 +240,8 @@ cursor mode, it also disables dragging and right/middle click entirely.
 
 ```toml
 hotkey = "ctrl+alt+space"   # Windows only; on Wayland the compositor binds it
-tap_timeout_ms = 250
-double_tap_ms = 350
+tap_timeout_ms = 250        # Windows only
+double_tap_ms = 350         # both: the double-tap window
 coarse_cols = 24
 coarse_rows = 14
 refine_cols = 5
