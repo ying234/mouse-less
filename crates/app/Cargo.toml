@@ -9,8 +9,14 @@ name = "my-mouseless"
 path = "src/main.rs"
 
 [dependencies]
+crossbeam-channel = "0.5.16"
 mouseless-core.workspace = true
-mouseless-os-kit.workspace = true
 mouseless-overlay.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.4"
+
+[target.'cfg(windows)'.dependencies]
+mouseless-os-kit.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+mouseless-wayland.workspace = true

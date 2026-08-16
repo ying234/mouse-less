@@ -1,49 +1,68 @@
-//! Show the grid overlay for a few seconds, with no hook installed.
+//! Show the grid overlay for a few seconds, with no trigger wired up.
 //!
 //! `cargo run --example preview` — useful for checking rendering and colors
-//! without wiring up the keyboard.
+//! without a hotkey, a compositor binding, or a running daemon.
+//!
+//! On Wayland the overlay holds an exclusive keyboard grab while it is up, so
+//! the keyboard is unusable for the few seconds this runs. It exits on its own.
 
-use mouseless_core::{label, GridConfig, LabeledCell};
-use mouseless_os_kit::screen;
-use mouseless_overlay::{Overlay, RenderOptions};
+use std::time::Duration;
+
+use mouseless_core::{label, GridConfig, LabeledCell, Rect};
+use mouseless_overlay::RenderOptions;
+
+// Both modules are shared with the binary rather than duplicated. Most of what
+// they offer is unused here, which is the point of a preview.
+#[path = "../src/config.rs"]
+#[allow(dead_code)]
+mod config;
+#[path = "../src/platform/mod.rs"]
+#[allow(dead_code, unused_imports)]
+mod platform;
 
 fn main() {
-    screen::enable_dpi_awareness();
-    let bounds = screen::virtual_screen();
-    let overlay = Overlay::start(bounds, RenderOptions::default()).expect("overlay");
-    println!("hwnd={} bounds={},{} {}x{}", overlay.hwnd(), bounds.x, bounds.y, bounds.w, bounds.h);
+    let cfg = config::FileConfig::default();
+    let (platform, _events) = platform::start(&cfg, RenderOptions::default()).expect("platform");
 
-    let cfg = GridConfig::default();
-    let rects = bounds.subdivide(cfg.coarse_cols, cfg.coarse_rows);
-    let labels = label::generate(&cfg.alphabet, rects.len());
-    let cells: Vec<LabeledCell> = labels
-        .into_iter()
-        .zip(rects)
-        .map(|(label, rect)| LabeledCell { label, rect })
-        .collect();
+    let bounds = platform.screen();
+    println!("bounds={},{} {}x{}", bounds.x, bounds.y, bounds.w, bounds.h);
 
+    let grid = GridConfig::default();
+    let cells = build_cells(bounds, &grid);
     // A typed prefix of "a" so the consumed-character dimming is visible too.
-    let visible: Vec<LabeledCell> = cells
+    let filtered: Vec<LabeledCell> = cells
         .iter()
         .filter(|c| c.label.starts_with('a'))
         .cloned()
         .collect();
 
-    println!("showing full grid ({} cells)", cells.len());
-    overlay.show(cells, String::new());
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    let hold = Duration::from_secs(3);
 
-    println!("showing filtered grid ({} cells)", visible.len());
-    overlay.show(visible, "a".to_string());
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    println!("showing full grid ({} cells)", cells.len());
+    platform.show(cells, String::new());
+    std::thread::sleep(hold);
+
+    println!("showing filtered grid ({} cells)", filtered.len());
+    platform.show(filtered, "a".to_string());
+    std::thread::sleep(hold);
 
     println!("showing cursor hint");
-    overlay.show_cursor_hint(mouseless_core::Point::new(700, 400), false);
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    platform.show_cursor_hint(bounds.center(), false);
+    std::thread::sleep(hold);
 
     println!("showing cursor hint (dragging)");
-    overlay.show_cursor_hint(mouseless_core::Point::new(700, 400), true);
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    platform.show_cursor_hint(bounds.center(), true);
+    std::thread::sleep(hold);
 
-    overlay.stop();
+    platform.hide();
+    platform.stop();
+}
+
+fn build_cells(bounds: Rect, grid: &GridConfig) -> Vec<LabeledCell> {
+    let rects = bounds.subdivide(grid.coarse_cols, grid.coarse_rows);
+    label::generate(&grid.alphabet, rects.len())
+        .into_iter()
+        .zip(rects)
+        .map(|(label, rect)| LabeledCell { label, rect })
+        .collect()
 }

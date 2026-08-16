@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/os-kit",
     "crates/overlay",
+    "crates/wayland",
     "crates/app",
 ]
 
@@ -16,6 +17,7 @@ license = "MIT"
 mouseless-core = { path = "crates/core" }
 mouseless-os-kit = { path = "crates/os-kit" }
 mouseless-overlay = { path = "crates/overlay" }
+mouseless-wayland = { path = "crates/wayland" }
 
 [profile.release]
 opt-level = 3

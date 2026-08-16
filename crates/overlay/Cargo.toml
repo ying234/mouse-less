@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-crossbeam-channel = "0.5.16"
 fontdue = "0.9.4"
 mouseless-core.workspace = true
+
+# The renderer is pure software and builds anywhere; only the layered window
+# needs Win32, so its dependencies are gated rather than the whole crate.
+[target.'cfg(windows)'.dependencies]
+crossbeam-channel = "0.5.16"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading"] }

@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-crossbeam-channel = "0.5.16"
 mouseless-core.workspace = true
+
+# The whole crate is Windows-only (`#![cfg(windows)]`), so on other platforms
+# it compiles to nothing and must not drag the `windows` crate in with it.
+[target.'cfg(windows)'.dependencies]
+crossbeam-channel = "0.5.16"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_HiDpi", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_System_Console"] }

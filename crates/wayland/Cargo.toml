@@ -1,0 +1,22 @@
+[package]
+name = "mouseless-wayland"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mouseless-core.workspace = true
+mouseless-overlay.workspace = true
+
+# The whole crate is `#![cfg(unix)]`, so on Windows it compiles to nothing and
+# must not drag a Wayland stack in with it.
+#
+# Everything Wayland comes through smithay-client-toolkit's re-exports rather
+# than being depended on directly: the protocol crates and wayland-client have
+# to be the *same* versions the toolkit was built against, and letting Cargo
+# resolve them separately is how you end up with two incompatible `WlSurface`
+# types and an error message that does not say so.
+[target.'cfg(unix)'.dependencies]
+crossbeam-channel = "0.5.16"
+signal-hook = "0.3.18"
+smithay-client-toolkit = "0.21.1"

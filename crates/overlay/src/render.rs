@@ -24,8 +24,20 @@ const CROSSHAIR_DRAG: Rgba = Rgba::new(255, 180, 90, 240);
 const CHIP_BG_DRAG: Rgba = Rgba::new(48, 26, 8, 240);
 const CHIP_BORDER_DRAG: Rgba = Rgba::new(255, 180, 90, 140);
 
-/// Fonts to try, in order, from the system font directory.
+/// Fonts to try, in order, when the platform offers no better answer.
+#[cfg(windows)]
 const FONT_CANDIDATES: [&str; 4] = ["segoeuib.ttf", "arialbd.ttf", "segoeui.ttf", "arial.ttf"];
+/// Linux has no single well-known UI font, so these are only the fallback for
+/// when `fc-match` is unavailable. Bold first: labels sit over live content.
+#[cfg(unix)]
+const FONT_CANDIDATES: [&str; 6] = [
+    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+];
 
 /// Below this, labels stop being readable at all.
 const MIN_FONT_PX: f32 = 9.0;
@@ -40,12 +52,21 @@ pub const DEFAULT_LABEL_FONT_MAX_PX: f32 = 22.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderOptions {
     pub label_font_max_px: f32,
+    /// Device pixels per layout pixel, for the parts of the drawing that have
+    /// a fixed size rather than one derived from a cell.
+    ///
+    /// Cell-derived sizes need nothing here: the caller hands in rects that
+    /// are already in device pixels, so the label size formula scales with
+    /// them. The crosshair and the hint chip have no cell to follow, and would
+    /// otherwise shrink to half size on a HiDPI output.
+    pub scale: f32,
 }
 
 impl Default for RenderOptions {
     fn default() -> Self {
         Self {
             label_font_max_px: DEFAULT_LABEL_FONT_MAX_PX,
+            scale: 1.0,
         }
     }
 }
@@ -88,21 +109,59 @@ impl std::fmt::Display for FontError {
 
 impl std::error::Error for FontError {}
 
-impl Renderer {
-    /// Load a bold UI font from the Windows font directory.
-    ///
-    /// Loading at runtime rather than embedding keeps the binary small and
-    /// picks up the font the user actually reads system UI in.
-    pub fn new(options: RenderOptions) -> Result<Self, FontError> {
-        let dir = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
-        let bytes = FONT_CANDIDATES
-            .iter()
-            .find_map(|name| std::fs::read(format!("{dir}\\Fonts\\{name}")).ok())
-            .ok_or(FontError::NotFound)?;
+/// Read a bold UI font from the system.
+///
+/// Loading at runtime rather than embedding keeps the binary small and picks
+/// up the font the user actually reads system UI in.
+#[cfg(windows)]
+fn system_font_bytes() -> Option<Vec<u8>> {
+    let dir = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+    FONT_CANDIDATES
+        .iter()
+        .find_map(|name| std::fs::read(format!("{dir}\\Fonts\\{name}")).ok())
+}
 
+/// Ask fontconfig which font this desktop actually uses, then fall back to a
+/// hardcoded list.
+///
+/// Shelling out to `fc-match` beats hardcoding paths: font packages differ per
+/// distribution, and fontconfig is present on any desktop that can already
+/// render text. The fallback covers a bare system where it is not.
+#[cfg(unix)]
+fn system_font_bytes() -> Option<Vec<u8>> {
+    let matched = std::process::Command::new("fc-match")
+        .args(["-f", "%{file}", "sans:bold"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty());
+
+    matched
+        .and_then(|path| std::fs::read(path).ok())
+        .or_else(|| FONT_CANDIDATES.iter().find_map(|path| std::fs::read(path).ok()))
+}
+
+impl Renderer {
+    pub fn new(options: RenderOptions) -> Result<Self, FontError> {
+        let bytes = system_font_bytes().ok_or(FontError::NotFound)?;
         let font = Font::from_bytes(bytes, FontSettings::default())
             .map_err(|e| FontError::Parse(e.to_string()))?;
         Ok(Self { font, options })
+    }
+
+    /// Change the drawing options between frames.
+    ///
+    /// Reloading the font for every output would be the alternative, and a
+    /// multi-monitor setup with mixed scale factors needs different options
+    /// per output on every single repaint.
+    pub fn set_options(&mut self, options: RenderOptions) {
+        self.options = options;
+    }
+
+    pub fn options(&self) -> RenderOptions {
+        self.options
     }
 
     fn text_width(&self, text: &str, px: f32) -> f32 {
@@ -189,31 +248,37 @@ impl Renderer {
         let y = pos.y - origin.1;
 
         // A gap around the centre keeps the exact target pixel visible.
-        const ARM: i32 = 26;
-        const GAP: i32 = 4;
-        for d in GAP..ARM {
-            for (px, py) in [(x - d, y), (x + d, y), (x, y - d), (x, y + d)] {
-                canvas.blend(px, py, crosshair, 255);
-                // A dark companion pixel keeps the line readable over light
-                // backgrounds without needing to sample what is underneath.
-                canvas.blend(px, py + 1, CROSSHAIR_SHADOW, 255);
+        let s = self.options.scale.max(0.1);
+        let arm = (26.0 * s).round() as i32;
+        let gap = (4.0 * s).round() as i32;
+        // One layout pixel is more than one device pixel on a HiDPI output;
+        // a one-pixel line there is a hairline the user has to hunt for.
+        let thick = (s.round() as i32).max(1);
+        for d in gap..arm {
+            for t in 0..thick {
+                for (px, py) in [(x - d, y + t), (x + d, y + t), (x + t, y - d), (x + t, y + d)] {
+                    canvas.blend(px, py, crosshair, 255);
+                    // A dark companion pixel keeps the line readable over light
+                    // backgrounds without needing to sample what is underneath.
+                    canvas.blend(px, py + thick, CROSSHAIR_SHADOW, 255);
+                }
             }
         }
 
-        let px = 13.0;
+        let px = 13.0 * s;
         let text_w = self.text_width(hint, px).ceil() as i32;
-        let chip_w = text_w + 12;
-        let chip_h = px.ceil() as i32 + 9;
+        let chip_w = text_w + (12.0 * s) as i32;
+        let chip_h = px.ceil() as i32 + (9.0 * s) as i32;
 
         // Sit below-right of the cursor, flipping when that would run off the
         // edge of the canvas.
-        let mut chip_x = x + ARM;
-        let mut chip_y = y + ARM;
+        let mut chip_x = x + arm;
+        let mut chip_y = y + arm;
         if chip_x + chip_w > canvas.width {
-            chip_x = x - ARM - chip_w;
+            chip_x = x - arm - chip_w;
         }
         if chip_y + chip_h > canvas.height {
-            chip_y = y - ARM - chip_h;
+            chip_y = y - arm - chip_h;
         }
         chip_x = chip_x.clamp(0, (canvas.width - chip_w).max(0));
         chip_y = chip_y.clamp(0, (canvas.height - chip_h).max(0));
@@ -221,8 +286,8 @@ impl Renderer {
         canvas.fill_rect(chip_x, chip_y, chip_w, chip_h, chip_bg);
         canvas.stroke_rect(chip_x, chip_y, chip_w, chip_h, chip_border);
 
-        let baseline = chip_y + chip_h - 5;
-        let mut pen = chip_x as f32 + 6.0;
+        let baseline = chip_y + chip_h - (5.0 * s) as i32;
+        let mut pen = chip_x as f32 + 6.0 * s;
         for ch in hint.chars() {
             self.draw_glyph(canvas, ch, px, pen, baseline, TEXT);
             pen += self.font.metrics(ch, px).advance_width;
